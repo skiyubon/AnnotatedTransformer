@@ -140,6 +140,16 @@ import plotly
 import pandas as pd
 
 import torch
+# Select the best available device
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+elif torch.cuda.is_available():
+    device = torch.device("cuda")
+else:
+    device = torch.device("cpu")
+
+print(f"Using device: {device}")
+
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -1911,11 +1921,14 @@ def run_toy_example(num_epochs=10, pre_norm=True, device='cpu'):
 
 # %%
 # GPU
-run_toy_example(num_epochs=20, pre_norm=True, device=0)
+# run_toy_example(num_epochs=20, pre_norm=True, device=0)
+# M1 GPU (Apple Silicon)
+run_toy_example(num_epochs=1, pre_norm=True, device="mps")
 
 # %%
 # GPU
-run_toy_example(num_epochs=30, pre_norm=False, device=0)
+# run_toy_example(num_epochs=30, pre_norm=False, device=0)
+run_toy_example(num_epochs=30, pre_norm=False, device="mps")
 
 # %%
 # CPU
@@ -2186,11 +2199,14 @@ batch.num_tokens
 tokenizer.vocab_size
 
 # %%
-device = 0
-if not torch.cuda.is_available():
-    # use cpu if cuda is not available
-    device = 'cpu'
-print(f'device-{torch.device(device)} is used.')
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+elif torch.cuda.is_available():
+    device = torch.device("cuda")
+else:
+    device = torch.device("cpu")
+
+print(f'device-{device} is used.')
 
 model = create_model(
     src_vocab_size=tokenizer.vocab_size,
@@ -2264,8 +2280,13 @@ def train_epochs(
             
             del batch
             del logits
+            # if isinstance(model.device, torch.device):
+            #     torch.cuda.empty_cache()    # release gpu memory
             if isinstance(model.device, torch.device):
-                torch.cuda.empty_cache()    # release gpu memory
+              if model.device.type == "cuda":
+                  torch.cuda.empty_cache()
+              elif model.device.type == "mps":
+                  torch.mps.empty_cache()
             
             # add stuff to progress bar in the end
             pbar.set_description(f"Epoch [{epoch+1}/{num_epochs}]")     # set description
@@ -2363,10 +2384,14 @@ eval_dataloader = DataLoader(
 def load_checkpoint(checkpoint, device):
     """Load trained checkpoint"""
     
-    if not torch.cuda.is_available():
-        # use cpu if cuda is not available
-        device = 'cpu'
-    print(f'device-{torch.device(device)} is used.')
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+
+    print(f'device-{device} is used.')
 
     model = create_model(
         src_vocab_size=tokenizer.vocab_size,
@@ -2390,7 +2415,7 @@ def load_checkpoint(checkpoint, device):
 
 # %%
 # Load model checkpoint when necessary
-device = 0
+# device = 0
 model = load_checkpoint('checkpoint_final.pt', device)
 
 # %%
