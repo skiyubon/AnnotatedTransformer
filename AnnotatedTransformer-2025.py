@@ -400,7 +400,7 @@ class Embeddings(nn.Module):
 # %%
 class EmbeddingsWithPositionalEncoding(nn.Module):
     
-    def __init__(self, vocab_size, dim, dropout=0.1, pe_type='fixed', max_len=50000):
+    def __init__(self, vocab_size, dim, dropout=0.1, pe_type='fixed', max_len=512):
         super().__init__()
         self.embed = nn.Embedding(vocab_size, dim)
         self.dim = dim
@@ -1162,7 +1162,8 @@ Image(filename='images/causal_mask.png')
 # %%
 class Generator(nn.Module):
     """
-    Define decoder side lanaguge model head (`final_proj`, a linear projection) and softmax for generation.
+    Define decoder side lanaguge model head (`final_proj`, a linear projection).
+    During training, CrossEntropyLoss expects raw logits and applies log-softmax internally.
     Note: To tie the weights of final_proj with nn.Embedding, bias term in final_proj is set to be False.
     """
     
@@ -1171,7 +1172,7 @@ class Generator(nn.Module):
         self.final_proj = nn.Linear(embed_dim, vocab_size, bias=False)    # projection to vocab size
     
     def forward(self, x):
-        return F.log_softmax(self.final_proj(x), dim=-1)      # softmax and log
+        return self.final_proj(x)
 
 # %%
 class Transformer(nn.Module):
@@ -2029,7 +2030,7 @@ print(tokenizer('我爱上海！'))
 # although `attention_mask` is also very useful to construct the masks.
 
 # %%
-max_seq_length = 128
+max_seq_length = 64
 
 def preprocess_function(row):
     tokenized_row = {}
@@ -2164,7 +2165,7 @@ data_collator = DataCollatorWithPadding(padding_value=tokenizer.pad_token_id)
 # %%
 # create data loader
 
-batch_size = 128
+batch_size = 16
 
 train_dataloader = DataLoader(
     train_dataset,
@@ -2211,8 +2212,9 @@ print(f'device-{device} is used.')
 model = create_model(
     src_vocab_size=tokenizer.vocab_size,
     tgt_vocab_size=tokenizer.vocab_size,
-    embed_dim=512,
-    num_layers=6,
+    embed_dim=256,
+    num_layers=4,
+    num_heads=4,
     pre_norm=True,
     device=device,
 )
@@ -2251,27 +2253,37 @@ def train_epochs(
     lr_scheduler=None,
     num_epochs=1,
     save_checkpoint=False,
+    use_amp=True,
 ):
     model.train()
+    amp_enabled = use_amp and model.device.type == "cuda"
+    scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
+
     for epoch in range(num_epochs):
         pbar = tqdm(train_dataloader)
         for i, batch in enumerate(pbar):
             batch = batch.to(model.device)      # move inputs to model.device
-            logits = model.forward(             # decoder output
-                batch.src, batch.tgt, batch.src_mask, batch.tgt_mask
-            )
-            y_pred = model.generator(logits)
 
-            loss = criterion(y_pred.reshape(-1, y_pred.shape[-1]), batch.tgt_y.reshape(-1))
-            loss.backward()
-            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+
+            with torch.cuda.amp.autocast(enabled=amp_enabled):
+                decoder_hidden = model.forward(
+                    batch.src, batch.tgt, batch.src_mask, batch.tgt_mask
+                )
+                logits = model.generator(decoder_hidden)
+
+                loss = criterion(logits.reshape(-1, logits.shape[-1]), batch.tgt_y.reshape(-1))
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
             lr = optimizer.param_groups[0]["lr"]    # current learning rate
             
             if lr_scheduler is not None:
                 lr_scheduler.step()
-            
-            optimizer.zero_grad()
+
+            loss_value = loss.item()
             
             # print(
             #     f"  Training  >  Batch: {i:3d},    Batch loss: {loss.item():.6f},    ",
@@ -2279,7 +2291,9 @@ def train_epochs(
             # )
             
             del batch
+            del decoder_hidden
             del logits
+            del loss
             # if isinstance(model.device, torch.device):
             #     torch.cuda.empty_cache()    # release gpu memory
             if isinstance(model.device, torch.device):
@@ -2290,7 +2304,7 @@ def train_epochs(
             
             # add stuff to progress bar in the end
             pbar.set_description(f"Epoch [{epoch+1}/{num_epochs}]")     # set description
-            pbar.set_postfix(loss=loss.item(), lr=lr)      # set postfix
+            pbar.set_postfix(loss=loss_value, lr=lr)      # set postfix
         
         if save_checkpoint:  # save model checkpoint at the end of each epoch
             file_path = f"checkpoint_{epoch+1}.pt"
@@ -2309,7 +2323,7 @@ train_dataset
 # %%
 # create train dataloader
 
-batch_size = 128
+batch_size = 16
 
 train_dataloader = DataLoader(
     train_dataset,
@@ -2359,6 +2373,7 @@ train_epochs(
     lr_scheduler,
     num_epochs,
     save_checkpoint=True,
+    use_amp=True,
 )
 
 # %% [markdown]
@@ -2371,7 +2386,7 @@ train_epochs(
 # 
 
 # %%
-batch_size = 128
+batch_size = 16
 
 eval_dataloader = DataLoader(
     eval_dataset,
@@ -2396,8 +2411,9 @@ def load_checkpoint(checkpoint, device):
     model = create_model(
         src_vocab_size=tokenizer.vocab_size,
         tgt_vocab_size=tokenizer.vocab_size,
-        embed_dim=512,
-        num_layers=6,
+        embed_dim=256,
+        num_layers=4,
+        num_heads=4,
         device=device,
     )
     
@@ -3105,6 +3121,3 @@ Image(filename='images/decoder_cross_attn2.png')
 
 
 # %%
-
-
-
