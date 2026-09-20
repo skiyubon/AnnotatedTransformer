@@ -284,6 +284,54 @@
 - [ ] Agent 和工具调用
 - [ ] 训练数据清洗
 
+### 1.5.1. 后续任务：从代码实现一个 Mini Agent
+
+这是完成当前 Transformer 主线后的深入任务，不打断当前学习阶段。
+
+从 `AnnotatedTransformer` 出发，知识会一路连接：
+
+```text
+Transformer
+     ↓
+Attention
+     ↓
+LLM
+     ↓
+RAG
+     ↓
+Tool Calling
+     ↓
+Agent
+     ↓
+Planning
+     ↓
+Memory
+     ↓
+Reflection
+     ↓
+Robot Agent
+```
+
+下一步建议进入：
+
+> 从代码角度实现一个 Mini Agent：不用复杂框架，用 Python + LLM API + Vector DB + Tool Calling 手写一个 Agent。
+
+- [ ] 从代码角度实现一个 Mini Agent：不用复杂框架，用 Python + LLM API + Vector DB + Tool Calling 手写一个 Agent
+
+最小版本需要包含：
+
+```text
+LLM
++
+Memory
++
+Tool
++
+ReAct Loop
+```
+
+因为理解 Agent 最好的方式不是看概念，而是自己搭一个最小版本。完成后，你会真正理解 ChatGPT、Claude Code、OpenAI Operator 这类系统底层是怎么工作的。
+
 ## 1.6. 防跑偏规则
 
 当你想切换方向时，先回答：
